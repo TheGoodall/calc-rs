@@ -5,6 +5,7 @@ use nom::{
 
 use std::fmt;
 use std::io::{stdin, stdout, Write};
+use std::process::exit;
 fn main() -> anyhow::Result<()> {
     let stdin = stdin();
     let mut stdout = stdout();
@@ -18,12 +19,21 @@ fn main() -> anyhow::Result<()> {
         stdout.flush().unwrap();
         stdin.read_line(&mut buffer)?;
 
+        if buffer == "exit\n" {
+            exit(0)
+        }
+
         let _ = &line.parse_add(&buffer);
         buffer.clear();
         let stack = line.calc();
-        let answer = stack.last().unwrap();
+        let answer = stack.last();
 
-        println!("Stack: {stack}, Result: {answer}");
+        match answer {
+            None => {}
+            Some(a) => {
+                println!("Stack: {stack}, Result: {a}")
+            }
+        }
     }
 }
 
@@ -48,6 +58,7 @@ enum Operator {
     Subtract,
     Sum,
     Power,
+    Clear,
 }
 
 impl Operator {
@@ -58,6 +69,7 @@ impl Operator {
             value(Operator::Subtract, tag("-")),
             value(Operator::Sum, tag("S")),
             value(Operator::Power, tag("^")),
+            value(Operator::Clear, tag("c")),
         ))(i)
     }
 }
@@ -110,6 +122,7 @@ impl Line {
                         let b = stack.0.pop().unwrap();
                         stack.0.push(b.pow(a.try_into().unwrap()))
                     }
+                    Operator::Clear => stack = Stack(vec![]),
                 },
             };
             stack
