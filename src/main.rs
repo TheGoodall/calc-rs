@@ -46,15 +46,17 @@ fn main() -> anyhow::Result<()> {
     }
 }
 
+use num::Rational64;
+
 #[derive(Debug, PartialEq)]
 enum Item {
-    Num(i32),
+    Num(Rational64),
     Operator(Operator),
 }
 impl Item {
     fn parse(i: &str) -> IResult<&str, Self> {
         alt((
-            map(cc::i32, Item::Num),
+            map(cc::i64, |i| Item::Num(Rational64::from(i))),
             map(Operator::parse, Item::Operator),
         ))(i)
     }
@@ -133,9 +135,13 @@ impl Line {
                     Operator::Power => {
                         let a = stack.0.pop().ok_or(CalcError::NotEnoughItemsInStack)?;
                         let b = stack.0.pop().ok_or(CalcError::NotEnoughItemsInStack)?;
-                        stack
-                            .0
-                            .push(b.pow(a.try_into().map_err(|_| CalcError::MathError)?))
+                        stack.0.push(
+                            b.pow(
+                                a.to_integer()
+                                    .try_into()
+                                    .map_err(|_| CalcError::MathError)?,
+                            ),
+                        )
                     }
                     Operator::Clear => stack = Stack(vec![]),
                 },
@@ -158,13 +164,13 @@ enum ParseError {
 }
 
 #[derive(Debug, PartialEq)]
-struct Stack(Vec<i32>);
+struct Stack(Vec<Rational64>);
 
 impl Stack {
     fn new() -> Self {
         Stack(Vec::new())
     }
-    fn last(&self) -> Option<&i32> {
+    fn last(&self) -> Option<&Rational64> {
         self.0.last()
     }
 }
@@ -181,8 +187,14 @@ mod tests {
     use super::*;
     #[test]
     fn test_number_parsing() {
-        assert_eq!(Item::parse("32"), Ok(("", Item::Num(32))));
-        assert_eq!(Item::parse("-73"), Ok(("", Item::Num(-73))));
+        assert_eq!(
+            Item::parse("32"),
+            Ok(("", Item::Num(Rational64::from_integer(32))))
+        );
+        assert_eq!(
+            Item::parse("-73"),
+            Ok(("", Item::Num(Rational64::from_integer(-73))))
+        );
     }
     #[test]
     fn test_operator_parsing() {
@@ -194,7 +206,10 @@ mod tests {
     }
     #[test]
     fn test_single_item_parsing() {
-        assert_eq!(Line::parse("3"), Ok(("", Line(vec![Item::Num(3)]))));
+        assert_eq!(
+            Line::parse("3"),
+            Ok(("", Line(vec![Item::Num(Rational64::from_integer(3))])))
+        );
         assert_eq!(
             Line::parse("+"),
             Ok(("", Line(vec![Item::Operator(Operator::Add)])))
@@ -223,8 +238,8 @@ mod tests {
             Ok((
                 "",
                 Line(vec![
-                    Item::Num(3),
-                    Item::Num(6),
+                    Item::Num(Rational64::from_integer(3)),
+                    Item::Num(Rational64::from_integer(6)),
                     Item::Operator(Operator::Add)
                 ])
             ))
@@ -234,10 +249,10 @@ mod tests {
             Ok((
                 "",
                 Line(vec![
-                    Item::Num(47),
-                    Item::Num(9),
+                    Item::Num(Rational64::from_integer(47)),
+                    Item::Num(Rational64::from_integer(9)),
                     Item::Operator(Operator::Add),
-                    Item::Num(15),
+                    Item::Num(Rational64::from_integer(15)),
                     Item::Operator(Operator::Multiply)
                 ])
             ))
@@ -250,9 +265,9 @@ mod tests {
             Ok((
                 "",
                 Line(vec![
-                    Item::Num(3),
-                    Item::Num(6),
-                    Item::Num(-2),
+                    Item::Num(Rational64::from_integer(3)),
+                    Item::Num(Rational64::from_integer(6)),
+                    Item::Num(Rational64::from_integer(-2)),
                     Item::Operator(Operator::Multiply),
                     Item::Operator(Operator::Multiply)
                 ])
@@ -263,10 +278,10 @@ mod tests {
             Ok((
                 "",
                 Line(vec![
-                    Item::Num(3),
-                    Item::Num(6),
+                    Item::Num(Rational64::from_integer(3)),
+                    Item::Num(Rational64::from_integer(6)),
                     Item::Operator(Operator::Multiply),
-                    Item::Num(2),
+                    Item::Num(Rational64::from_integer(2)),
                     Item::Operator(Operator::Multiply)
                 ])
             ))
@@ -276,9 +291,9 @@ mod tests {
             Ok((
                 "",
                 Line(vec![
-                    Item::Num(3),
-                    Item::Num(6),
-                    Item::Num(2),
+                    Item::Num(Rational64::from_integer(3)),
+                    Item::Num(Rational64::from_integer(6)),
+                    Item::Num(Rational64::from_integer(2)),
                     Item::Operator(Operator::Multiply),
                     Item::Operator(Operator::Multiply)
                 ])
@@ -289,9 +304,9 @@ mod tests {
             Ok((
                 "",
                 Line(vec![
-                    Item::Num(3),
-                    Item::Num(6),
-                    Item::Num(2),
+                    Item::Num(Rational64::from_integer(3)),
+                    Item::Num(Rational64::from_integer(6)),
+                    Item::Num(Rational64::from_integer(2)),
                     Item::Operator(Operator::Sum),
                 ])
             ))
@@ -301,8 +316,8 @@ mod tests {
             Ok((
                 "",
                 Line(vec![
-                    Item::Num(3),
-                    Item::Num(2),
+                    Item::Num(Rational64::from_integer(3)),
+                    Item::Num(Rational64::from_integer(2)),
                     Item::Operator(Operator::Power),
                 ])
             ))
@@ -312,41 +327,45 @@ mod tests {
     fn test_calculating() {
         assert_eq!(
             Line::parse("3 6 +").unwrap().1.calc().unwrap(),
-            Stack(vec![9])
+            Stack(vec![Rational64::from_integer(9)])
         );
         assert_eq!(
             Line::parse("3 6 *").unwrap().1.calc().unwrap(),
-            Stack(vec![18])
+            Stack(vec![Rational64::from_integer(18)])
         );
         assert_eq!(
             Line::parse("3 6 + 2 *").unwrap().1.calc().unwrap(),
-            Stack(vec![18])
+            Stack(vec![Rational64::from_integer(18)])
         );
         assert_eq!(
             Line::parse("6 3 - 2 -").unwrap().1.calc().unwrap(),
-            Stack(vec![1])
+            Stack(vec![Rational64::from_integer(1)])
         );
         assert_eq!(
             Line::parse("6 -3 - -2 -").unwrap().1.calc().unwrap(),
-            Stack(vec![11])
+            Stack(vec![Rational64::from_integer(11)])
         );
         assert_eq!(
             Line::parse("6 +3 - -2 *").unwrap().1.calc().unwrap(),
-            Stack(vec![-6])
+            Stack(vec![Rational64::from_integer(-6)])
         );
         assert_eq!(
             Line::parse("2 4 6 S").unwrap().1.calc().unwrap(),
-            Stack(vec![12])
+            Stack(vec![Rational64::from_integer(12)])
         );
         assert_eq!(
             Line::parse("3 2 ^").unwrap().1.calc().unwrap(),
-            Stack(vec![9])
+            Stack(vec![Rational64::from_integer(9)])
         );
     }
     #[test]
     fn test_op_on_empty_stack() {
         assert_eq!(
             Line::parse("+").unwrap().1.calc(),
+            Err(CalcError::NotEnoughItemsInStack)
+        );
+        assert_eq!(
+            Line::parse("1+").unwrap().1.calc(),
             Err(CalcError::NotEnoughItemsInStack)
         )
     }

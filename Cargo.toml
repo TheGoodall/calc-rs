@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.69"
 nom = "7.1.3"
+num = "0.4.0"
