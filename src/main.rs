@@ -23,16 +23,25 @@ fn main() -> anyhow::Result<()> {
             exit(0)
         }
 
-        let _ = &line.parse_add(&buffer);
+        match line.parse_add(&buffer) {
+            Ok(()) => (),
+            Err(ParseError::GenericParseError) => println!("Parsing Error!"),
+        }
         buffer.clear();
-        let stack = line.calc().unwrap();
-        let answer = stack.last();
+        let calc_result = line.calc();
+        match calc_result {
+            Ok(stack) => {
+                let answer = stack.last();
 
-        match answer {
-            None => {}
-            Some(a) => {
-                println!("Stack: {stack}, Result: {a}")
+                match answer {
+                    None => {}
+                    Some(a) => {
+                        println!("Stack: {stack}, Result: {a}")
+                    }
+                }
             }
+            Err(CalcError::NotEnoughItemsInStack) => println!("Not enough items in stack"),
+            Err(CalcError::MathError) => println!("Math Error!"),
         }
     }
 }
@@ -88,9 +97,12 @@ impl Line {
         )(i)
     }
 
-    fn parse_add(&mut self, i: &str) {
-        let mut newline = Line::parse(i).unwrap().1;
+    fn parse_add(&mut self, i: &str) -> Result<(), ParseError> {
+        let mut newline = Line::parse(i)
+            .map_err(|_| (ParseError::GenericParseError))?
+            .1;
         self.0.append(&mut newline.0);
+        Ok(())
     }
 
     fn calc(&self) -> Result<Stack, CalcError> {
@@ -121,7 +133,9 @@ impl Line {
                     Operator::Power => {
                         let a = stack.0.pop().ok_or(CalcError::NotEnoughItemsInStack)?;
                         let b = stack.0.pop().ok_or(CalcError::NotEnoughItemsInStack)?;
-                        stack.0.push(b.pow(a.try_into().unwrap()))
+                        stack
+                            .0
+                            .push(b.pow(a.try_into().map_err(|_| CalcError::MathError)?))
                     }
                     Operator::Clear => stack = Stack(vec![]),
                 },
@@ -136,6 +150,11 @@ impl Line {
 #[derive(Debug, PartialEq)]
 enum CalcError {
     NotEnoughItemsInStack,
+    MathError,
+}
+#[derive(Debug, PartialEq)]
+enum ParseError {
+    GenericParseError,
 }
 
 #[derive(Debug, PartialEq)]
