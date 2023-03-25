@@ -25,7 +25,7 @@ fn main() -> anyhow::Result<()> {
 
         let _ = &line.parse_add(&buffer);
         buffer.clear();
-        let stack = line.calc();
+        let stack = line.calc().unwrap();
         let answer = stack.last();
 
         match answer {
@@ -93,24 +93,25 @@ impl Line {
         self.0.append(&mut newline.0);
     }
 
-    fn calc(&self) -> Stack {
-        let result = self.0.iter().fold(Stack::new(), |mut stack, item| {
+    fn calc(&self) -> Result<Stack, CalcError> {
+        let result = self.0.iter().fold(Ok(Stack::new()), |stack, item| {
+            let mut stack = stack?;
             match item {
                 Item::Num(number) => stack.0.push(*number),
                 Item::Operator(op) => match op {
                     Operator::Add => {
-                        let a = stack.0.pop().unwrap();
-                        let b = stack.0.pop().unwrap();
+                        let a = stack.0.pop().ok_or(CalcError::NotEnoughItemsInStack)?;
+                        let b = stack.0.pop().ok_or(CalcError::NotEnoughItemsInStack)?;
                         stack.0.push(b + a)
                     }
                     Operator::Multiply => {
-                        let a = stack.0.pop().unwrap();
-                        let b = stack.0.pop().unwrap();
+                        let a = stack.0.pop().ok_or(CalcError::NotEnoughItemsInStack)?;
+                        let b = stack.0.pop().ok_or(CalcError::NotEnoughItemsInStack)?;
                         stack.0.push(b * a)
                     }
                     Operator::Subtract => {
-                        let a = stack.0.pop().unwrap();
-                        let b = stack.0.pop().unwrap();
+                        let a = stack.0.pop().ok_or(CalcError::NotEnoughItemsInStack)?;
+                        let b = stack.0.pop().ok_or(CalcError::NotEnoughItemsInStack)?;
                         stack.0.push(b - a)
                     }
                     Operator::Sum => {
@@ -118,18 +119,23 @@ impl Line {
                         stack = Stack(vec![s])
                     }
                     Operator::Power => {
-                        let a = stack.0.pop().unwrap();
-                        let b = stack.0.pop().unwrap();
+                        let a = stack.0.pop().ok_or(CalcError::NotEnoughItemsInStack)?;
+                        let b = stack.0.pop().ok_or(CalcError::NotEnoughItemsInStack)?;
                         stack.0.push(b.pow(a.try_into().unwrap()))
                     }
                     Operator::Clear => stack = Stack(vec![]),
                 },
             };
-            stack
+            Ok(stack)
         });
 
         result
     }
+}
+
+#[derive(Debug, PartialEq)]
+enum CalcError {
+    NotEnoughItemsInStack,
 }
 
 #[derive(Debug, PartialEq)]
@@ -285,19 +291,44 @@ mod tests {
     }
     #[test]
     fn test_calculating() {
-        assert_eq!(Line::parse("3 6 +").unwrap().1.calc(), Stack(vec![9]));
-        assert_eq!(Line::parse("3 6 *").unwrap().1.calc(), Stack(vec![18]));
-        assert_eq!(Line::parse("3 6 + 2 *").unwrap().1.calc(), Stack(vec![18]));
-        assert_eq!(Line::parse("6 3 - 2 -").unwrap().1.calc(), Stack(vec![1]));
         assert_eq!(
-            Line::parse("6 -3 - -2 -").unwrap().1.calc(),
+            Line::parse("3 6 +").unwrap().1.calc().unwrap(),
+            Stack(vec![9])
+        );
+        assert_eq!(
+            Line::parse("3 6 *").unwrap().1.calc().unwrap(),
+            Stack(vec![18])
+        );
+        assert_eq!(
+            Line::parse("3 6 + 2 *").unwrap().1.calc().unwrap(),
+            Stack(vec![18])
+        );
+        assert_eq!(
+            Line::parse("6 3 - 2 -").unwrap().1.calc().unwrap(),
+            Stack(vec![1])
+        );
+        assert_eq!(
+            Line::parse("6 -3 - -2 -").unwrap().1.calc().unwrap(),
             Stack(vec![11])
         );
         assert_eq!(
-            Line::parse("6 +3 - -2 *").unwrap().1.calc(),
+            Line::parse("6 +3 - -2 *").unwrap().1.calc().unwrap(),
             Stack(vec![-6])
         );
-        assert_eq!(Line::parse("2 4 6 S").unwrap().1.calc(), Stack(vec![12]));
-        assert_eq!(Line::parse("3 2 ^").unwrap().1.calc(), Stack(vec![9]));
+        assert_eq!(
+            Line::parse("2 4 6 S").unwrap().1.calc().unwrap(),
+            Stack(vec![12])
+        );
+        assert_eq!(
+            Line::parse("3 2 ^").unwrap().1.calc().unwrap(),
+            Stack(vec![9])
+        );
+    }
+    #[test]
+    fn test_op_on_empty_stack() {
+        assert_eq!(
+            Line::parse("+").unwrap().1.calc(),
+            Err(CalcError::NotEnoughItemsInStack)
+        )
     }
 }
