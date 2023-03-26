@@ -3,9 +3,11 @@ use nom::{
     combinator::value, multi::many0, sequence::delimited, IResult,
 };
 
+use num::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub, Rational64};
 use std::fmt;
 use std::io::{stdin, stdout, Write};
 use std::process::exit;
+
 fn main() -> anyhow::Result<()> {
     let stdin = stdin();
     let mut stdout = stdout();
@@ -46,8 +48,6 @@ fn main() -> anyhow::Result<()> {
     }
 }
 
-use num::Rational64;
-
 #[derive(Debug, PartialEq)]
 enum Item {
     Num(Rational64),
@@ -67,6 +67,7 @@ enum Operator {
     Add,
     Multiply,
     Subtract,
+    Divide,
     Sum,
     Power,
     Clear,
@@ -81,6 +82,7 @@ impl Operator {
             value(Operator::Sum, tag("S")),
             value(Operator::Power, tag("^")),
             value(Operator::Clear, tag("c")),
+            value(Operator::Divide, tag("/")),
         ))(i)
     }
 }
@@ -116,17 +118,22 @@ impl Line {
                     Operator::Add => {
                         let a = stack.0.pop().ok_or(CalcError::NotEnoughItemsInStack)?;
                         let b = stack.0.pop().ok_or(CalcError::NotEnoughItemsInStack)?;
-                        stack.0.push(b + a)
+                        stack.0.push(b.checked_add(&a).ok_or(CalcError::MathError)?)
                     }
                     Operator::Multiply => {
                         let a = stack.0.pop().ok_or(CalcError::NotEnoughItemsInStack)?;
                         let b = stack.0.pop().ok_or(CalcError::NotEnoughItemsInStack)?;
-                        stack.0.push(b * a)
+                        stack.0.push(b.checked_mul(&a).ok_or(CalcError::MathError)?)
                     }
                     Operator::Subtract => {
                         let a = stack.0.pop().ok_or(CalcError::NotEnoughItemsInStack)?;
                         let b = stack.0.pop().ok_or(CalcError::NotEnoughItemsInStack)?;
-                        stack.0.push(b - a)
+                        stack.0.push(b.checked_sub(&a).ok_or(CalcError::MathError)?)
+                    }
+                    Operator::Divide => {
+                        let a = stack.0.pop().ok_or(CalcError::NotEnoughItemsInStack)?;
+                        let b = stack.0.pop().ok_or(CalcError::NotEnoughItemsInStack)?;
+                        stack.0.push(b.checked_div(&a).ok_or(CalcError::MathError)?)
                     }
                     Operator::Sum => {
                         let s = stack.0.iter().sum();
@@ -199,6 +206,11 @@ mod tests {
     #[test]
     fn test_operator_parsing() {
         assert_eq!(Item::parse("+"), Ok(("", Item::Operator(Operator::Add))));
+        assert_eq!(Item::parse("/"), Ok(("", Item::Operator(Operator::Divide))));
+        assert_eq!(
+            Item::parse("-"),
+            Ok(("", Item::Operator(Operator::Subtract)))
+        );
         assert_eq!(
             Item::parse("*"),
             Ok(("", Item::Operator(Operator::Multiply)))
@@ -215,8 +227,16 @@ mod tests {
             Ok(("", Line(vec![Item::Operator(Operator::Add)])))
         );
         assert_eq!(
+            Line::parse("-"),
+            Ok(("", Line(vec![Item::Operator(Operator::Subtract)])))
+        );
+        assert_eq!(
             Line::parse("*"),
             Ok(("", Line(vec![Item::Operator(Operator::Multiply)])))
+        );
+        assert_eq!(
+            Line::parse("/"),
+            Ok(("", Line(vec![Item::Operator(Operator::Divide)])))
         );
         assert_eq!(
             Line::parse("S"),
@@ -324,7 +344,7 @@ mod tests {
         );
     }
     #[test]
-    fn test_calculating() {
+    fn test_calculating_simple_integers() {
         assert_eq!(
             Line::parse("3 6 +").unwrap().1.calc().unwrap(),
             Stack(vec![Rational64::from_integer(9)])
@@ -368,5 +388,33 @@ mod tests {
             Line::parse("1+").unwrap().1.calc(),
             Err(CalcError::NotEnoughItemsInStack)
         )
+    }
+
+    #[test]
+    fn test_creating_fraction() {
+        assert_eq!(
+            Line::parse("1 2 /").unwrap().1.calc().unwrap(),
+            Stack(vec![Rational64::new(1, 2)])
+        );
+        assert_eq!(
+            Line::parse("2 4 /").unwrap().1.calc().unwrap(),
+            Stack(vec![Rational64::new(1, 2)])
+        )
+    }
+
+    #[test]
+    fn operations_on_fractions() {
+        assert_eq!(
+            Line::parse("1 2 / 1 2 / +").unwrap().1.calc().unwrap(),
+            Stack(vec![Rational64::from_integer(1)])
+        );
+        assert_eq!(
+            Line::parse("1 2 / 1 2 / *").unwrap().1.calc().unwrap(),
+            Stack(vec![Rational64::new(1, 4)])
+        );
+        assert_eq!(
+            Line::parse("1 2 / 1 2 / -").unwrap().1.calc().unwrap(),
+            Stack(vec![Rational64::from_integer(0)])
+        );
     }
 }
