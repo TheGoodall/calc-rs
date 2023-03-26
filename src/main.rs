@@ -13,8 +13,7 @@ fn main() -> anyhow::Result<()> {
     let mut stdout = stdout();
 
     let mut buffer = String::new();
-
-    let mut line: Line = Line::new();
+    let mut stack = Stack::new();
 
     loop {
         print!("> ");
@@ -25,25 +24,33 @@ fn main() -> anyhow::Result<()> {
             exit(0)
         }
 
-        match line.parse_add(&buffer) {
-            Ok(()) => (),
-            Err(ParseError::GenericParseError) => println!("Parsing Error!"),
-        }
-        buffer.clear();
-        let calc_result = line.calc();
-        match calc_result {
-            Ok(stack) => {
-                let answer = stack.last();
-
-                match answer {
-                    None => {}
-                    Some(a) => {
-                        println!("Stack: {stack}, Result: {a}")
+        match Line::parse(&buffer) {
+            Err(_) => println!("Parsing Error!"),
+            Ok((_, line)) => {
+                buffer.clear();
+                let calc_result = line.calc(stack.clone());
+                if let Some(returned_stack) = match calc_result {
+                    Ok(returned_stack) => {
+                        match returned_stack.last() {
+                            None => {}
+                            Some(a) => {
+                                println!("Stack: {returned_stack}, Result: {a}")
+                            }
+                        };
+                        Some(returned_stack)
                     }
+                    Err(CalcError::NotEnoughItemsInStack) => {
+                        println!("Stack: {stack}, Not enough items in stack!");
+                        None
+                    }
+                    Err(CalcError::MathError) => {
+                        println!("Stack: {stack}, Math Error!");
+                        None
+                    }
+                } {
+                    stack = returned_stack
                 }
             }
-            Err(CalcError::NotEnoughItemsInStack) => println!("Not enough items in stack"),
-            Err(CalcError::MathError) => println!("Math Error!"),
         }
     }
 }
@@ -87,13 +94,10 @@ impl Operator {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Default)]
 struct Line(Vec<Item>);
 
 impl Line {
-    fn new() -> Self {
-        Line(vec![])
-    }
     fn parse(i: &str) -> IResult<&str, Self> {
         map(
             many0(delimited(cc::multispace0, Item::parse, cc::multispace0)),
@@ -101,16 +105,8 @@ impl Line {
         )(i)
     }
 
-    fn parse_add(&mut self, i: &str) -> Result<(), ParseError> {
-        let mut newline = Line::parse(i)
-            .map_err(|_| (ParseError::GenericParseError))?
-            .1;
-        self.0.append(&mut newline.0);
-        Ok(())
-    }
-
-    fn calc(&self) -> Result<Stack, CalcError> {
-        let result = self.0.iter().fold(Ok(Stack::new()), |stack, item| {
+    fn calc(&self, existing_stack: Stack) -> Result<Stack, CalcError> {
+        let result = self.0.iter().fold(Ok(existing_stack), |stack, item| {
             let mut stack = stack?;
             match item {
                 Item::Num(number) => stack.0.push(*number),
@@ -165,12 +161,8 @@ enum CalcError {
     NotEnoughItemsInStack,
     MathError,
 }
-#[derive(Debug, PartialEq)]
-enum ParseError {
-    GenericParseError,
-}
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 struct Stack(Vec<Rational64>);
 
 impl Stack {
@@ -346,46 +338,66 @@ mod tests {
     #[test]
     fn test_calculating_simple_integers() {
         assert_eq!(
-            Line::parse("3 6 +").unwrap().1.calc().unwrap(),
+            Line::parse("3 6 +").unwrap().1.calc(Stack::new()).unwrap(),
             Stack(vec![Rational64::from_integer(9)])
         );
         assert_eq!(
-            Line::parse("3 6 *").unwrap().1.calc().unwrap(),
+            Line::parse("3 6 *").unwrap().1.calc(Stack::new()).unwrap(),
             Stack(vec![Rational64::from_integer(18)])
         );
         assert_eq!(
-            Line::parse("3 6 + 2 *").unwrap().1.calc().unwrap(),
+            Line::parse("3 6 + 2 *")
+                .unwrap()
+                .1
+                .calc(Stack::new())
+                .unwrap(),
             Stack(vec![Rational64::from_integer(18)])
         );
         assert_eq!(
-            Line::parse("6 3 - 2 -").unwrap().1.calc().unwrap(),
+            Line::parse("6 3 - 2 -")
+                .unwrap()
+                .1
+                .calc(Stack::new())
+                .unwrap(),
             Stack(vec![Rational64::from_integer(1)])
         );
         assert_eq!(
-            Line::parse("6 -3 - -2 -").unwrap().1.calc().unwrap(),
+            Line::parse("6 -3 - -2 -")
+                .unwrap()
+                .1
+                .calc(Stack::new())
+                .unwrap(),
             Stack(vec![Rational64::from_integer(11)])
         );
         assert_eq!(
-            Line::parse("6 +3 - -2 *").unwrap().1.calc().unwrap(),
+            Line::parse("6 +3 - -2 *")
+                .unwrap()
+                .1
+                .calc(Stack::new())
+                .unwrap(),
             Stack(vec![Rational64::from_integer(-6)])
         );
         assert_eq!(
-            Line::parse("2 4 6 S").unwrap().1.calc().unwrap(),
+            Line::parse("2 4 6 S")
+                .unwrap()
+                .1
+                .calc(Stack::new())
+                .unwrap(),
             Stack(vec![Rational64::from_integer(12)])
         );
         assert_eq!(
-            Line::parse("3 2 ^").unwrap().1.calc().unwrap(),
+            Line::parse("3 2 ^").unwrap().1.calc(Stack::new()).unwrap(),
             Stack(vec![Rational64::from_integer(9)])
         );
     }
     #[test]
     fn test_op_on_empty_stack() {
         assert_eq!(
-            Line::parse("+").unwrap().1.calc(),
+            Line::parse("+").unwrap().1.calc(Stack::new()),
             Err(CalcError::NotEnoughItemsInStack)
         );
         assert_eq!(
-            Line::parse("1+").unwrap().1.calc(),
+            Line::parse("1+").unwrap().1.calc(Stack::new()),
             Err(CalcError::NotEnoughItemsInStack)
         )
     }
@@ -393,11 +405,11 @@ mod tests {
     #[test]
     fn test_creating_fraction() {
         assert_eq!(
-            Line::parse("1 2 /").unwrap().1.calc().unwrap(),
+            Line::parse("1 2 /").unwrap().1.calc(Stack::new()).unwrap(),
             Stack(vec![Rational64::new(1, 2)])
         );
         assert_eq!(
-            Line::parse("2 4 /").unwrap().1.calc().unwrap(),
+            Line::parse("2 4 /").unwrap().1.calc(Stack::new()).unwrap(),
             Stack(vec![Rational64::new(1, 2)])
         )
     }
@@ -405,15 +417,27 @@ mod tests {
     #[test]
     fn operations_on_fractions() {
         assert_eq!(
-            Line::parse("1 2 / 1 2 / +").unwrap().1.calc().unwrap(),
+            Line::parse("1 2 / 1 2 / +")
+                .unwrap()
+                .1
+                .calc(Stack::new())
+                .unwrap(),
             Stack(vec![Rational64::from_integer(1)])
         );
         assert_eq!(
-            Line::parse("1 2 / 1 2 / *").unwrap().1.calc().unwrap(),
+            Line::parse("1 2 / 1 2 / *")
+                .unwrap()
+                .1
+                .calc(Stack::new())
+                .unwrap(),
             Stack(vec![Rational64::new(1, 4)])
         );
         assert_eq!(
-            Line::parse("1 2 / 1 2 / -").unwrap().1.calc().unwrap(),
+            Line::parse("1 2 / 1 2 / -")
+                .unwrap()
+                .1
+                .calc(Stack::new())
+                .unwrap(),
             Stack(vec![Rational64::from_integer(0)])
         );
     }
