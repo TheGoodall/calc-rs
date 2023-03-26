@@ -78,6 +78,7 @@ enum Operator {
     Sum,
     Power,
     Clear,
+    Pop,
 }
 
 impl Operator {
@@ -90,6 +91,7 @@ impl Operator {
             value(Operator::Power, tag("^")),
             value(Operator::Clear, tag("c")),
             value(Operator::Divide, tag("/")),
+            value(Operator::Pop, tag("p")),
         ))(i)
     }
 }
@@ -147,6 +149,9 @@ impl Line {
                         )
                     }
                     Operator::Clear => stack = Stack(vec![]),
+                    Operator::Pop => {
+                        stack.0.pop();
+                    }
                 },
             };
             Ok(stack)
