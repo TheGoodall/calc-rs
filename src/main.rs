@@ -181,7 +181,12 @@ impl Stack {
 
 impl fmt::Display for Stack {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.iter().for_each(|i| write!(f, " {}", i).unwrap());
+        self.0.iter().for_each(|i| {
+            let int = i.to_integer();
+            let frac = i % 1;
+
+            write!(f, " {int}+{frac}").unwrap();
+        });
         Ok(())
     }
 }
